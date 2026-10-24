@@ -1,0 +1,8 @@
+/* A single compact KPI strip; narrow screens scroll instead of adding rows. */
+#metrics{grid-template-columns:repeat(5,minmax(165px,1fr));gap:10px;min-width:0;max-width:100%;margin:0 0 16px;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:3px}
+#metrics .metric{display:grid;grid-template-columns:1.5rem minmax(0,1fr) auto;align-items:center;column-gap:.5rem;height:4rem;min-height:4rem;padding:.625rem .75rem;border-radius:12px;grid-column:auto;min-width:0;scroll-snap-align:start}
+#metrics .metric-icon{position:static;grid-column:1;grid-row:1;display:grid;place-items:center;width:1.5rem;height:1.5rem;border-radius:50%;font-size:.875rem}
+#metrics .metric-label{grid-column:2;grid-row:1;margin:0;font-size:.8125rem;line-height:1.2;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:normal}
+#metrics .metric-value{grid-column:3;grid-row:1;display:block;margin:0;font-size:1.5rem;line-height:1;font-weight:600;letter-spacing:-.04em;font-variant-numeric:tabular-nums;white-space:nowrap}
+#metrics .metric-note{display:none}
+#metrics .metric:hover{transform:none;box-shadow:none}

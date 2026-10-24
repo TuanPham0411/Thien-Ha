@@ -1,0 +1,7 @@
+#feedback-form .capture-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:min(100%,570px);gap:10px;align-items:stretch;margin:12px 0}
+#feedback-form .capture-actions>.button{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:100%;height:42px;min-height:42px;min-width:0;padding:6px 10px;margin:0;font-family:inherit;font-size:.8125rem;font-weight:500;line-height:1.2;text-align:center;border:1px solid var(--line);border-radius:9px;white-space:normal;color:var(--ink);background:var(--card);cursor:pointer}
+#feedback-form .capture-actions>.native-capture:has(#native-photo){background:color-mix(in srgb,var(--card) 78%,#9dcd69 22%);border-color:color-mix(in srgb,var(--line) 65%,#9dcd69 35%)}
+#feedback-form .capture-actions>.native-capture:has(#native-video){background:color-mix(in srgb,var(--card) 78%,#ff8646 22%);border-color:color-mix(in srgb,var(--line) 65%,#ff8646 35%)}
+#feedback-form .capture-actions>.button:hover{filter:brightness(1.12)}
+#feedback-form .capture-actions>.button:focus-visible,#feedback-form .capture-actions>.button:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+@media(max-width:480px){#feedback-form .capture-actions{gap:7px}#feedback-form .capture-actions>.button{font-size:.75rem;padding:5px;height:42px;min-height:42px}}

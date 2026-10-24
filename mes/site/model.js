@@ -52,6 +52,10 @@ export function validateFiles(files) {
   }
   return "";
 }
+export function validateEvidence(files) {
+  if (!Array.isArray(files) || files.some(file => !file || typeof file.name !== "string" || !Number.isSafeInteger(file.size))) return "Add at least one photo or video.";
+  return validateFiles(files) || (files.some(file => /^(image|video)\//.test(attachmentType(file))) ? "" : "Add at least one photo or video.");
+}
 export function validateIssue(value) {
   if (!value.departmentId) return "Select a department.";
   if (!value.process?.trim() || value.process.trim().length > 120)
@@ -73,20 +77,32 @@ export function validateOccurrences(items) {
   }
   return "";
 }
-export function filterIssues(
-  issues,
-  { search = "", status = "All", department = "All", priority = "All" } = {},
-) {
-  const term = search.trim().toLowerCase();
-  return issues.filter(
-    (i) =>
-      (status === "All" || i.status === status) &&
-      (department === "All" || i.departmentId === department) &&
-      (priority === "All" || i.priority === priority) &&
-      `${i.id} ${i.ticketNumber||""} ${i.subject} ${i.description} ${i.process} ${i.reporterName} ${i.teamLeaderName} ${i.departmentName}`
-        .toLowerCase()
-        .includes(term),
-  );
+export function normalizeSearch(value) {
+  return String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d").toLowerCase().replace(/\s+/g, " ").trim();
+}
+export function filterIssues(issues, { search = "", searchField = "all", status = "All", department = "All", priority = "All", issueType = "All" } = {}) {
+  const terms = normalizeSearch(search).split(" ").filter(Boolean);
+  return issues.filter(issue => {
+    if ((status !== "All" && issue.status !== status) || (department !== "All" && issue.departmentId !== department) || (priority !== "All" && issue.priority !== priority) || (issueType !== "All" && (issue.issueTypeId || "__unclassified") !== issueType)) return false;
+    const fields = {
+      ticket: [issue.id, issue.ticketNumber],
+      user: [issue.reporterName, issue.reporterUsername],
+      title: [issue.subject],
+      type: [issue.issueTypeName || "Unclassified Chưa phân loại"],
+      department: [issue.departmentName],
+      content: [issue.description, issue.assessment],
+    };
+    const values = searchField === "all" || !Object.hasOwn(fields, searchField) ? [...Object.values(fields).flat(), issue.process, issue.teamLeaderName] : fields[searchField];
+    const text = normalizeSearch(values.filter(value => value != null).join(" "));
+    return terms.every(term => text.includes(term));
+  });
+}
+export function issueFilterOptions(issues, departments = []) {
+  const collect = values => [...new Map(values.filter(item => item.id).map(item => [item.id, item])).values()].sort((a,b) => a.name.localeCompare(b.name, "vi"));
+  return {
+    departments: collect([...issues.map(issue => ({id:issue.departmentId,name:issue.departmentName || issue.departmentId})), ...departments.map(department => ({id:department.id,name:department.name || department.id}))]),
+    types: collect(issues.map(issue => ({id:issue.issueTypeId || "__unclassified",name:issue.issueTypeName || "Unclassified"}))),
+  };
 }
 export function stats(issues) {
   const open = issues.filter((i) => !["Resolved", "Closed"].includes(i.status));

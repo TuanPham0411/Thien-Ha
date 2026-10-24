@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <meta name="theme-color" content="#101317" />
     <title>[TH] P+F MES</title>
+    <link rel="icon" href="/favicon.ico?v=20261023" sizes="16x16 32x32 48x48" />
+    <link rel="icon" href="/favicon.svg?v=20261023" type="image/svg+xml" sizes="any" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20261023" sizes="180x180" />
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/workspace.css" />
     <script>try{document.documentElement.dataset.theme=(localStorage.getItem("th-mes-theme")==="day"?"day":"night")}catch{document.documentElement.dataset.theme="night"}</script>
@@ -113,23 +116,6 @@
           </div>
 
           <div class="chart-grid">
-            <article class="card chart-card wide-chart">
-              <div class="card-heading">
-                <div>
-                  <h2>Feedback activity</h2>
-                  <p id="activity-caption">Submissions and resolutions over time</p>
-                </div>
-                <span class="legend"
-                  ><i></i> Submitted <i class="green"></i> Resolved</span
-                >
-              </div>
-              <div
-                id="activity-chart"
-                class="activity-chart"
-                role="img"
-                aria-label="Feedback activity chart"
-              ></div>
-            </article>
             <article class="card">
               <div class="card-heading">
                 <div>
@@ -186,7 +172,9 @@
                 ><input
                   id="issue-search"
                   type="search"
-                  placeholder="Search ID, feedback, process, reporter…" /></label
+                  placeholder="Search ticket, user, title, type, department or content…" /></label
+              ><select id="issue-search-field" aria-label="Search field"><option value="all">All fields</option><option value="user">Reporter / user</option><option value="ticket">Ticket number</option><option value="title">Title</option><option value="type">Ticket type</option><option value="department">Department</option><option value="content">Ticket content</option></select
+              ><select id="issue-type-filter" aria-label="Filter by ticket type"><option value="All">All ticket types</option></select
               ><select id="issue-status" aria-label="Filter by status"></select
               ><select
                 id="issue-department"
@@ -198,6 +186,7 @@
               ></select
               ><button id="clear-filters" class="text-button">Reset</button>
             </div>
+            <p class="helper ticket-search-help">Search includes closed tickets. Choose Closed to view closed tickets only.</p>
             <div class="table-wrap">
               <table role="table" aria-label="Issue list">
                 <thead>
@@ -259,21 +248,24 @@
                 <div id="occurrence-rows"></div>
                 <div class="occurrence-actions"><button type="button" id="add-moment" class="button small">＋ Add moment</button><button type="button" id="add-range" class="button small">＋ Add time range</button></div>
               </section>
+              <div id="issue-reference-guide" class="issue-reference-guide"><strong>Include traceability references</strong><p>Add the MO number, serial number, process code, OP number, product or part number, machine/station and any related identifiers that apply.</p><p class="issue-reference-warning">Without relevant reference information, this ticket has no reference value for tracing or comparing the issue. If an identifier is unavailable or not applicable, say so and provide another way to identify the affected item.</p></div>
               <label for="description-input">Feedback <span>*</span></label><textarea
                 id="description-input"
+                aria-describedby="issue-reference-guide"
                 rows="6"
                 required
                 minlength="1"
                 maxlength="5000"
-                placeholder="Describe the issue or suggestion. Attach a screenshot if helpful."
+                placeholder="MO / Serial / Process code / OP number / Product / Station: … Describe the issue and attach a photo or video."
               ></textarea
-              ><label for="attachment-input">Attachments</label
+              ><label for="attachment-input">Photo or video (required)</label
               ><label class="upload-zone" for="attachment-input"
                 ><span>↥</span><strong>Choose files from your computer</strong
                 ><small
                   >Up to 5 files · images/documents 10 MB · videos 200 MB · MP4, WEBM, MOV supported</small
                 ><input
                   id="attachment-input"
+                  aria-required="true"
                   type="file"
                   multiple
                   accept=".jpg,.jpeg,.png,.webp,.pdf,.txt,.csv,.xlsx,.mp4,.webm,.mov"
@@ -566,6 +558,7 @@
       <form id="user-admin-form" class="profile-form">
         <label>Username<input id="admin-username" required maxlength="64" pattern="[a-z0-9][a-z0-9._-]*" /></label>
         <label>Display name<input id="admin-name" required maxlength="80" /></label>
+        <label>Account role<select id="admin-role"><option value="user">User</option><option value="admin">Admin</option></select></label>
         <label>Email<input id="admin-email" type="email" maxlength="160" /></label>
         <label>Phone<input id="admin-phone" maxlength="32" /></label>
         <label>Job title<input id="admin-title" maxlength="80" /></label>
@@ -589,9 +582,10 @@
         <button id="user-login-tab" aria-pressed="true">User</button
         ><button id="admin-login-tab" aria-pressed="false">Owner</button>
       </div>
-      <form id="password-login-form" class="profile-form">
-        <label>Username<input id="account-username" required maxlength="64" autocomplete="username" autocapitalize="none" spellcheck="false" /></label>
-        <label>Password<input id="account-password" type="password" required autocomplete="current-password" /></label>
+      <form id="password-login-form" class="profile-form" method="post" autocomplete="on">
+        <label>Username<input id="account-username" name="username" required maxlength="64" autocomplete="username" autocapitalize="none" spellcheck="false" /></label>
+        <label>Password<input id="account-password" name="password" type="password" required autocomplete="current-password" /></label>
+        <label class="checkbox"><input id="account-remember" name="remember" type="checkbox" />Remember me for 30 days</label>
         <button class="button primary full">Sign in</button>
         <p class="helper">Accounts are provided by the administrator. First time or forgot your password? Ask for an activation link.</p>
         <button id="show-activation" type="button" class="text-button">Activate account</button>

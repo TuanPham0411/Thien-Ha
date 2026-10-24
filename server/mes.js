@@ -1,3 +1,4 @@
+import {validateEvidence,validateIssue} from '../mes/site/model.js';
 import {driveApi} from './drive-client.js';
 import {serveCloudMedia,prepareCloudOriginal,commitCloudRecord,cloudRecord,removeCloudFile} from './cloud-media.js';
 import {publishFile} from './publish.js';
@@ -12,7 +13,7 @@ import {join} from 'node:path';
 import {hash,token,validPath,actorFor} from './security.js';
 import {normalizeDocument,documentText} from '../mes/site/rich-document.js';
 const viewerActions=new Set(['read','readBundle','readTicket','downloadUrl']);
-const publicActions=new Set(['getAppearanceDefaults','getDirectory','passwordLogin','activateAccount',...viewerActions]);
+const publicActions=new Set(['getDashboardDefaults','getAppearanceDefaults','getDirectory','passwordLogin','activateAccount',...viewerActions]);
 const types=new Set(['image/jpeg','image/png','image/webp','video/mp4','video/webm','video/quicktime','application/pdf','text/plain','text/csv','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
 export function mesRouter(pool,filesRoot) {
  const router=Router();
@@ -84,6 +85,19 @@ export function mesRouter(pool,filesRoot) {
   if(typeof name!=='string'||!data||typeof data!=='object'||Array.isArray(data)||name==='finishDelete')return res.sendStatus(400);
   const actor={...actorFor(req.cookies.th_mes,req.headers['x-mes-tester']),ip:req.ip,agent:String(req.headers['user-agent']||'').slice(0,240)};
   if(!publicActions.has(name)&&!actor.session)return res.status(401).json({code:'unauthenticated',error:'Sign in first'});
+  if(name==='createIssue'){
+   await dispatch('getSession',{},actor);
+   const invalid=validateEvidence(data.evidence);
+   if(invalid)return res.status(400).json({code:'invalid-evidence',error:invalid});
+  }
+  if(name==='completePendingTicket'){
+   await dispatch('getSession',{},actor);
+   data.richDocument=normalizeDocument(data.richDocument);data.description=documentText(data.richDocument);
+   const invalid=validateIssue(data);if(invalid)return res.status(400).json({code:'invalid-argument',error:invalid});
+   if(!Array.isArray(data.files)||data.files.length>5)return res.sendStatus(400);
+   const files=[];for(const file of data.files){if(!validPath(file.path)||typeof file.name!=='string')return res.sendStatus(400);const {rows:[info]}=await pool.query('select size,type from public.files where path=$1',[file.path]);if(!info)return res.sendStatus(400);if(!await cloudRecord(pool,file.path))await stat(await filePath(filesRoot,file.path));files.push({...file,size:Number(info.size),type:info.type});}
+   const evidence=validateEvidence(files);if(evidence)return res.status(400).json({code:'invalid-evidence',error:evidence});data.files=files;
+  }
   if((name==='createIssue'||name==='saveTicketEdit'||(name==='updateIssue'&&data.operation==='edit'))&&data.richDocument!==undefined){data.richDocument=normalizeDocument(data.richDocument);data.description=documentText(data.richDocument);}
   if(name==='uploadUrl'||name==='downloadUrl') {
    if(!validPath(data.path))return res.sendStatus(400);
@@ -118,8 +132,9 @@ export function mesRouter(pool,filesRoot) {
   }
   const result=await dispatch(name,data,actor);
   if(result.sessionToken) {
-   res.cookie('th_mes',result.sessionToken,{httpOnly:true,secure:true,sameSite:'lax',path:'/',maxAge:12*3600*1000});
+   res.cookie('th_mes',result.sessionToken,{httpOnly:true,secure:true,sameSite:'lax',path:'/',maxAge:(result.sessionMaxAgeSeconds===2592000?2592000:43200)*1000});
    delete result.sessionToken;
+   delete result.sessionMaxAgeSeconds;
   }
   if(name==='logout')res.clearCookie('th_mes',{path:'/',httpOnly:true,secure:true,sameSite:'lax'});
   if(name==='getDirectory')result.apiVersion='accounts-v1';

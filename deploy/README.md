@@ -207,3 +207,71 @@ discard uncompleted `mes_uploads` rows, expired grants and old sessions, then ru
 the migration runner to reapply runtime grants. Test sign-in and representative
 attachments before switching the service to that replacement. Restoring is an
 explicit operator procedure; deployment never invokes it automatically.
+
+## Physical Pi status screen
+
+On Raspberry Pi, `th-status.service` displays a read-only terminal dashboard on VT8 and starts at boot. It refreshes every five seconds with API/database health, app/Nginx/PostgreSQL/tunnel states, CPU load/temperature, RAM, disk, uptime and local interface addresses. It reads no credentials or ticket contents and makes no public-network requests. Use Ctrl+Alt+F1 for the normal login console; Ctrl+Alt+F8 returns to status. The status process runs as `thapp`; only fixed VT switching commands run as root. Hosts without Linux virtual consoles skip this integration.
+
+### Incident timeline, search and access roles
+
+Issue search includes Closed tickets and supports reporter name/username, ticket
+number, title, issue type, department, description and assessment. Search ignores
+case and Vietnamese accents; type/status/department/priority filters combine.
+Historical catalog labels remain selectable.
+
+The main incident timeline uses `occurrences`, never ticket creation time. A sweep
+of merged per-ticket intervals computes exact concurrent load; a ticket counts
+once even when its own reported ranges overlap. The compact chart separates three
+aligned tracks: a blue line of peak concurrent tickets per hour/day, severity-
+colored stacked columns of distinct ticket starts, and individual reported spans.
+Line and column axes use integer ticket counts; the line is not normalized to
+0–1. Peak sampling is explicitly labeled, and selecting a window inspects its
+exact peak time. The SVG uses its measured pixel width and the user's inherited
+font size instead of stretching text with a fixed viewBox.
+
+Solid spans stop at the actual reported range end. Point incidents use a dot and
+an optional dashed continuation to the current time (including closed tickets);
+this is a visualization, not a verified incident duration. Users can select
+reported moments only. The chart previews three priority-sorted ticket lanes;
+Explore tickets contains full metadata, up to 50 spans and ranked windows.
+Invalid/missing incident times are reported separately. Theme/width/font changes
+redraw the chart locally. Date, type, department, severity and concurrency filters
+also run locally, without loading media or adding per-filter API requests.
+The visible dashboard refreshes its existing record bundle every 60 seconds.
+
+The compact layout combines status, handling metrics and recent tickets into one
+overview. Secondary analysis has a three-column classification row plus two
+side-by-side switchable widgets (department/priority distribution and open-ticket
+age/resolution time). Tab choices persist per user; existing admin/user widget
+visibility remains authoritative. The old Feedback activity widget is removed.
+
+
+`hpham` (`mes-owner`) remains the sole Owner. Owner assigns admin/user roles in
+User directory → Edit account. Role changes revoke existing sessions. Admins
+manage default dashboard widgets; account management, publishing, host storage
+and Wi-Fi remain Owner-only. Saved personal widget layouts take precedence over
+workspace defaults; users can reset to administrator defaults. Existing layouts
+and all ticket records are retained during the additive migration.
+
+Settings → Links and network drives configures content tabs. Link widgets support
+HTTP(S) intranet services, relative site links and copyable UNC/drive/file paths.
+Drive paths never become executable hyperlinks, and the server never fetches
+these addresses. Local services need LAN/VPN access and their own authentication.
+
+### Owner Wi-Fi controls on Raspberry Pi
+
+The installer enables `th-wifi.service`, a root broker reachable only through a
+Unix socket owned by `thapp`. Owner-only same-origin API routes expose its fixed
+status/connect/confirm operations. The Node application retains its unprivileged
+service identity. Other platforms hide Wi-Fi controls.
+
+Only NetworkManager-managed Raspberry Pi Wi-Fi supports changing SSID and WPA2/
+WPA3 Personal credentials (DHCP). NetworkManager checkpoints restore the prior
+connection and delete the unconfirmed new profile after 120 seconds, even if the
+application disconnects. Reopen Settings → Raspberry Pi Wi-Fi and confirm the
+new active connection within that period to persist it. Wi-Fi passwords never
+appear in process arguments or application logs; profile files are root-only.
+Deployment only installs this capability; it does not change the current Wi-Fi.
+Unsupported hosts/controllers report the feature unavailable. Physical network
+switch/rollback still needs a supervised device test; automated tests mock
+NetworkManager to avoid disrupting the production connection.

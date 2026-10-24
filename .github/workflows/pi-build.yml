@@ -1,13 +1,13 @@
 name: Build and deploy Pi
 on:
   push:
-    branches: [main]
+    branches: [main, feat/mes-quick-access]
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: pi-${{ github.ref }}
+  group: pi-deployment
   cancel-in-progress: false
 jobs:
   build:
@@ -33,6 +33,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: python3 deploy/test-storage.py
+      - run: python3 deploy/test-restore-tunnel.py
+      - run: python3 deploy/test-rpi-status.py
+      - run: python3 deploy/test-wifi.py
       - run: npm test
       - run: npm run test:pi
         env:
@@ -68,7 +71,7 @@ jobs:
             work/release.sha256
           retention-days: 7
   deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feat/mes-quick-access')
     needs: build
     runs-on: [self-hosted, Linux, ARM64]
     timeout-minutes: 10
@@ -96,6 +99,12 @@ jobs:
           mkdir unpacked
           tar -xzf release.tar.gz -C unpacked
           sudo -n /usr/local/sbin/th-deploy "$PWD/unpacked" "$RELEASE_ID"
+      - name: Restore original tunnel transport
+        run: sudo -n /usr/local/sbin/th-deploy --restore-tunnel
+      - name: Verify physical Pi status console
+        run: sudo -n /usr/local/sbin/th-deploy --inspect-status
+      - name: Verify Wi-Fi broker without changing connections
+        run: sudo -n /usr/local/sbin/th-deploy --inspect-wifi
       - name: Inspect routing without credentials
         run: sudo -n /usr/local/sbin/th-deploy --inspect-routing
       - name: Remove downloaded artifact
@@ -109,6 +118,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
+      - uses: actions/checkout@v4
       - name: Check HTTPS sites through Cloudflare from outside the Pi
         shell: bash
         run: |
@@ -124,6 +134,7 @@ jobs:
             https://mes.th.io.vn/api/mes | python3 -c 'import json,sys; assert json.load(sys.stdin).get("apiVersion") == "accounts-v1"'
 
           curl --fail --silent --show-error --max-time 20 https://mes.th.io.vn/ | python3 -c 'import sys; page=sys.stdin.read(); assert all("id=\""+key+"\"" in page for key in ["theme-toggle","notice-board","workspace-video","issue-type-select","announcement-files"]); assert "network-targets" not in page and "network-target-form" not in page'
+          curl --fail --silent --show-error --max-time 20 -H 'Content-Type: application/json' --data '{"name":"getDashboardDefaults"}' https://mes.th.io.vn/api/mes | python3 -c 'import json,sys; assert isinstance(json.load(sys.stdin).get("hidden"),list)'
           status=$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' --data '{"action":"read"}' https://mes.th.io.vn/api/mes/workspace)
           test "$status" = 200
           curl --fail --silent --show-error --max-time 20 -H 'Content-Type: application/json' --data '{"name":"read","data":{"path":"issues"}}' https://mes.th.io.vn/api/mes | python3 -c 'import json,sys; data=json.load(sys.stdin); assert isinstance(data.get("rows"),list); assert all("uploadSlots" not in row and "reporterUsername" not in row for row in data["rows"])'
@@ -134,3 +145,8 @@ jobs:
             curl --fail --silent --show-error --max-time 20 "https://mes.th.io.vn/api/mes/tickets/$reference" | python3 -c 'import json,sys; row=json.load(sys.stdin); assert row.get("ticketNumber") and row.get("id"); assert "uploadSlots" not in row'
             curl --fail --silent --show-error --max-time 20 "https://mes.th.io.vn/ticket/$reference" -o /dev/null
           fi
+
+      - name: Verify published ticket evidence metadata
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-delay 3 --max-time 20 -H 'Content-Type: application/json' --data '{"name":"read","data":{"path":"issues"}}' https://mes.th.io.vn/api/mes | python3 deploy/check-evidence.py

@@ -1,0 +1,8 @@
+#access-history-card .access-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 20px;margin:16px 0 12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--card) 94%,var(--ink) 6%);font-family:var(--ui-font,Calibri,Carlito,Arial,sans-serif);font-size:.8125rem}
+#access-history-card .access-search,#access-history-card .access-pagination{display:flex;align-items:center;gap:8px;min-width:0}
+#access-history-card .access-search label{margin:0;font:inherit;white-space:nowrap;color:var(--muted)}
+#access-history-card #access-username{box-sizing:border-box;width:190px;min-width:0;height:36px;min-height:36px;margin:0;padding:7px 10px;font:inherit;border-radius:7px}
+#access-history-card .access-toolbar .button{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;height:36px;min-height:36px;margin:0;padding:7px 12px;font:inherit;line-height:1.2;white-space:nowrap;border-radius:7px}
+#access-history-card #access-page{display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:36px;margin:0;font:inherit;font-weight:600;font-variant-numeric:tabular-nums}
+#access-history-card .access-toolbar .button:disabled{opacity:.45;cursor:default}
+@media(max-width:600px){#access-history-card .access-toolbar{padding:10px;gap:10px}#access-history-card .access-search{display:grid;grid-template-columns:minmax(0,1fr) auto;width:100%}#access-history-card .access-search label{grid-column:1/-1}#access-history-card #access-username{width:100%}#access-history-card .access-pagination{justify-content:flex-end;width:100%}}

@@ -1,3 +1,14 @@
+import {initPendingTickets} from './pending-tickets.js';
+import {initIncidentColors} from './incident-colors.js';
+import './access-history.css';
+import './capture-buttons.css';
+import './dashboard-header.css';
+import './compact-metrics.css';
+import {initAnalysisGroups} from './analysis-groups.js';
+import {compactDashboard} from './dashboard-layout.js';
+import {initSettingsTabs} from './settings-tabs.js';
+import {initWifiSettings} from './wifi-settings.js';
+import {initIncidentTimeline} from './incident-timeline.js';
 import {initMobileFeedback} from './mobile-feedback.js';
 import {initAppearancePreferences,loadAppearancePreferences} from './appearance-preferences.js';
 import {initContentTabs} from './content-tabs.js';
@@ -5,7 +16,7 @@ import {initDriveStorage} from './drive-storage.js';
 import {initDashboardPreferences,loadDashboardPreferences,applyDashboardPreferences} from './dashboard-preferences.js';
 import { initWorkspace, progressView, ticketProgress } from "./workspace.js";
 import { revealPage, animateDashboard } from "./motion.js";
-import { activitySeries, resolutionSummary, submissionCohort } from "./analytics.js";
+import { resolutionSummary, submissionCohort } from "./analytics.js";
 import { createRichEditor } from "./rich-editor.js";
 import { documentText, renderDocument } from "./rich-document.js";
 import { t, initializeLanguage, getLanguage } from "./i18n.js";
@@ -22,8 +33,10 @@ import {
   statuses,
   priorities,
   validateFiles,
+  validateEvidence,
   validateIssue,
   filterIssues,
+  issueFilterOptions,
   stats,
   safeUsername,
   makeDemo,
@@ -49,6 +62,7 @@ const state = {
   preview: previewMode,
   user: null,
   isOwner: false,
+  isAdmin: false,
   ready: false,
   requiresWindows: true,
   users: [],
@@ -180,7 +194,7 @@ function ownerOnly() {
 function navigate(page) {
   if(!page.startsWith('content:')&&/^\/page\//.test(location.pathname))history.pushState(null,'','/');
   if(page!=='detail'&&/^\/ticket\//.test(location.pathname)&&!linkedTicketPending)history.pushState(null,'','/');
-  if (page === "settings" && !state.isOwner) {
+  if (page === "settings" && !state.isOwner && !state.isAdmin) {
     toast("Owner access is required.");
     return;
   }
@@ -224,10 +238,6 @@ function renderDirectories() {
   selectOptions($("login-user"), active(state.users), {
     placeholder: "Select your display name",
   });
-  selectOptions($("issue-department"), [
-    { id: "All", name: "All departments" },
-    ...state.departments,
-  ]);
   renderForm();
   if (state.isOwner) renderSettings();
 }
@@ -266,15 +276,17 @@ function renderDashboard() {
     ["Critical open", "critical", "!", "Requires attention"],
   ]) {
     const card = el("article", undefined, "metric");
+    card.title = `${t(label)} · ${t(note)}`;
     card.append(
       el("p", label, "metric-label"),
       el("span", state.ready ? String(s[key]) : "—", "metric-value"),
       el("small", note, "metric-note"),
       el("span", icon, "metric-icon"),
     );
+    card.lastElementChild.setAttribute("aria-hidden", "true");
     $("metrics").append(card);
   }
-  renderActivity(scopedIssues());
+  incidentTimeline.render();
   renderOperations(issues);
   workspace.renderCharts(issues);
   renderDetailedAnalytics(issues);
@@ -309,43 +321,6 @@ function renderDashboard() {
       ),
     );
   if (changed) animateDashboard($("dashboard-page"));
-}
-function renderActivity(issues) {
-  const counts = activitySeries(issues, $("dashboard-period").value);
-  $("activity-caption").textContent = $("dashboard-period").value === "all" ? "Submissions and resolutions · full recorded history" : `Submissions and resolutions · last ${$("dashboard-period").value} days`;
-  const max = Math.max(1, ...counts.flatMap((d) => [d.created, d.resolved]));
-  const axis = el("div", undefined, "chart-y");
-  axis.append(
-    el("span", String(max)),
-    el("span", max > 1 ? String(Math.floor(max / 2)) : ""),
-    el("span", "0"),
-  );
-  const grid = el("div", undefined, "activity-grid");
-  for (const d of counts) {
-    const day = el("div", undefined, "activity-day"),
-      bars = el("div", undefined, "activity-bars");
-    for (const [name, count] of [
-      ["Submitted", d.created],
-      ["Resolved", d.resolved],
-    ]) {
-      const bar = el("span");
-      bar.style.height = `${(count / max) * 100}%`;
-      bar.title = `${d.day.toLocaleDateString(getLanguage() === "vi" ? "vi-VN" : "en-GB")} – ${new Date(d.end.getTime()-1).toLocaleDateString(getLanguage() === "vi" ? "vi-VN" : "en-GB")}: ${count} ${t(name)}`;
-      bar.setAttribute("aria-label", bar.title);
-      bar.tabIndex = 0;
-      bar.dataset.tooltip = bar.title;
-      bars.append(bar);
-    }
-    day.append(
-      bars,
-      el(
-        "small",
-        d.day.toLocaleDateString(getLanguage() === "vi" ? "vi-VN" : "en-GB", { day: "2-digit", month: "short" }),
-      ),
-    );
-    grid.append(day);
-  }
-  $("activity-chart").replaceChildren(axis, grid);
 }
 function renderDonut(issues) {
   const counts = statuses.map(
@@ -437,12 +412,17 @@ function renderOperations(issues) {
 function filtered() {
   return filterIssues(scopedIssues(), {
     search: $("issue-search").value,
+    searchField: $("issue-search-field").value,
+    issueType: $("issue-type-filter").value || "All",
     status: $("issue-status").value || "All",
     department: $("issue-department").value || "All",
     priority: $("issue-priority").value || "All",
   }).sort((a, b) => stamp(b.updatedAt) - stamp(a.updatedAt));
 }
 function renderIssues() {
+  const options=issueFilterOptions(scopedIssues(),state.departments);
+  selectOptions($("issue-department"),[{id:"All",name:"All departments"},...options.departments]);
+  selectOptions($("issue-type-filter"),[{id:"All",name:"All ticket types"},...options.types.map(item=>({...item,name:item.id==="__unclassified"?t("Unclassified"):item.name}))]);
   const issues = filtered(),
     pageSize = 12,
     totalPages = Math.max(1, Math.ceil(issues.length / pageSize));
@@ -747,7 +727,7 @@ function renderSettings() {
   $("user-rows").replaceChildren();
   for (const u of state.users) {
     const row = el("tr");
-    row.append(el("td", u.displayName), el("td", u.username));
+    row.append(el("td", u.displayName), el("td", `${u.username} · ${u.id === "mes-owner" ? "Owner" : u.role || "user"}`));
     const active = el("td");
     active.append(badge(u.active ? "Active" : "Inactive", "state"));
     const controls = el("td"),
@@ -794,6 +774,7 @@ let editingUser;
 function openUserAdmin(user) {
   if (!state.isOwner || ["mes-owner", "mes-tester"].includes(user.id)) return;
   editingUser = user;
+  $("admin-role").value = user.role === "admin" ? "admin" : "user";
   for (const [id, key] of [["admin-username","username"],["admin-name","displayName"],["admin-email","email"],["admin-phone","phone"],["admin-title","jobTitle"]]) $(id).value = user[key] || "";
   $("admin-toggle").textContent = user.active ? "Deactivate" : "Restore";
   $("admin-reset").disabled = !user.active;
@@ -811,6 +792,8 @@ $("user-admin-form").onsubmit = e => {
   run("user-admin-status", e.currentTarget.querySelector("button"), async () => {
     const data = {operation:"update", uid:editingUser.id, username:$("admin-username").value.trim().toLowerCase(), displayName:$("admin-name").value.trim(), email:$("admin-email").value.trim(), phone:$("admin-phone").value.trim(), jobTitle:$("admin-title").value.trim()};
     if (state.preview) Object.assign(editingUser,data); else await callable("manageUser",data);
+    const role=$("admin-role").value;
+    if(role !== (editingUser.role || "user")){if(state.preview)editingUser.role=role;else await callable("setAccountRole",{uid:editingUser.id,role});}
     await refreshAccounts(); showStatus("user-admin-status","Account saved.");
   });
 };
@@ -880,14 +863,14 @@ function updateIdentity() {
 
   $("start-tester").hidden = !state.isOwner || state.preview;
   $("tester-banner").hidden = !state.user?.isTester;
-  $("admin-nav").hidden = !state.isOwner;
+  $("admin-nav").hidden = !state.isOwner && !state.isAdmin;
   $("account-name").textContent = state.user?.displayName || "Viewer";
   $("account-role").textContent = state.preview
     ? "Preview session"
     : state.isOwner
       ? "MES owner"
       : state.user
-        ? "Verified workspace user"
+        ? state.isAdmin ? "Administrator" : "Verified workspace user"
         : "Read-only access";
   $("avatar").textContent = (state.user?.displayName || "V")
     .slice(0, 1)
@@ -897,7 +880,7 @@ function updateIdentity() {
     : state.ready
       ? "Workspace loaded"
       : "Connecting…";
-  if (!state.isOwner && state.page === "settings") navigate("dashboard");
+  if (!state.isOwner && !state.isAdmin && state.page === "settings") navigate("dashboard");
   renderForm();
   document.dispatchEvent(new CustomEvent('mes:identity'));
 }
@@ -953,6 +936,7 @@ function demoEvent(issue, kind, text, extra = {}) {
   }
   renderAll();
 }
+let pendingFeedback=null;
 $("feedback-form").onsubmit = (e) => {
   e.preventDefault();
   if (!requireMember()) return;
@@ -967,7 +951,7 @@ $("feedback-form").onsubmit = (e) => {
     };
     data.description = documentText(data.richDocument);
     data.subject = data.description.split(/\r?\n/)[0].slice(0, 100);
-    const invalid = validateIssue(data) || validateFiles(state.files);
+    const invalid = validateIssue(data) || validateEvidence(state.files);
     if (invalid) {
       showStatus("create-status", invalid);
       return;
@@ -1015,38 +999,19 @@ $("feedback-form").onsubmit = (e) => {
         "Preview feedback created. No production data was submitted.",
       );
     } else {
-      const result = await callable("createIssue", data);
-      createdId = result.id;
-      const uploaded = [];
+      const signature=JSON.stringify(data),sameDraft=pendingFeedback&&Date.now()-pendingFeedback.savedAt<86400000&&pendingFeedback.uid===state.user.uid&&pendingFeedback.signature===signature&&pendingFeedback.files.length===state.files.length&&pendingFeedback.files.every((file,index)=>file===state.files[index]);
+      if(!sameDraft){const result=await callable("createIssue",{...data,evidence:state.files.map(file=>({name:file.name,type:attachmentType(file),size:file.size}))});pendingFeedback={...result,savedAt:Date.now(),uid:state.user.uid,signature,files:[...state.files],uploaded:new Map()};}
+      const draft=pendingFeedback;createdId=draft.id;
       try {
-        for (const [index, file] of state.files.entries()) {
-          showStatus(
-            "create-status",
-            `Feedback saved. Uploading attachment ${index + 1} of ${state.files.length}…`,
-          );
-          await uploadAttachment(`issues/${createdId}/${result.uploadSlots[index]}`, file, attachmentType(file));
-          uploaded.push({ slot: result.uploadSlots[index], name: file.name });
+        for(const [index,file] of draft.files.entries()){
+          showStatus("create-status",t('Uploading evidence before submitting ticket…')+` ${index+1}/${state.files.length}`);
+          if(!draft.uploaded.has(index)){await uploadAttachment(`issues/${createdId}/${draft.uploadSlots[index]}`,file,attachmentType(file));draft.uploaded.set(index,{slot:draft.uploadSlots[index],name:file.name});}
         }
-        if (uploaded.length)
-          await callable("attachFiles", {
-            issueId: createdId,
-            files: uploaded,
-          });
-      } catch (e) {
-        if (uploaded.length)
-          try {
-            await callable("attachFiles", {
-              issueId: createdId,
-              files: uploaded,
-            });
-          } catch {
-            /* Kept on server; owner can inspect upload slots. */
-          }
-        showStatus(
-          "create-status",
-          `Feedback ${createdId} was saved, but one or more attachments failed. Do not resubmit the issue. Contact the owner with this ID.`,
-        );
-        toast("Feedback saved; attachment upload needs attention.");
+        const confirmed=await callable("attachFiles",{issueId:createdId,files:[...draft.uploaded.values()]});
+        if(confirmed.published===false)throw new Error('Add at least one photo or video.');
+        pendingFeedback=null;
+      } catch(error){
+        showStatus("create-status",t('Upload incomplete. Your ticket has not been submitted. Keep this page open and press Submit again to resume.'));
         return;
       }
     }
@@ -1183,7 +1148,7 @@ $("edit-issue").onclick = async () => {
 $('edit-form').onsubmit=event=>{event.preventDefault();if(!ownerOnly()||!editingTicket)return;
  run('edit-status',$('edit-form').querySelector('button[type="submit"]'),async()=>{
  const issue=editingTicket,data={id:issue.id,baseUpdatedAt:issue.updatedAt,subject:$('edit-subject').value.trim(),process:$('edit-process').value.trim(),departmentId:$('edit-department').value,issueTypeId:$('edit-type').value,reporterUid:$('edit-reporter').value,status:$('edit-ticket-status').value,priority:$('edit-priority').value,progress:Number($('edit-progress').value),assessment:$('edit-assessment').value,richDocument:editEditor.getDocument(),occurrences:[...$('edit-occurrences').children].map(row=>({kind:row.dataset.kind,...Object.fromEntries([...row.querySelectorAll('input')].map(i=>[i.name,i.dataset.original&&i.value===i.dataset.initial?i.dataset.original:new Date(i.value).toISOString()]))}))};
- data.description=documentText(data.richDocument);const invalid=validateIssue(data);if(invalid)throw Object.assign(new Error(invalid),{code:'invalid-argument'});
+ data.description=documentText(data.richDocument);const invalid=validateIssue(data)||(issue.evidenceRequired?validateEvidence([...editRetained,...editImageFiles]):'');if(invalid)throw Object.assign(new Error(invalid),{code:'invalid-argument'});
  const files=editRetained.map(f=>({path:f.path,slotIndex:f.slotIndex,name:editNames.get(f)||f.name}));
  if(!state.preview){for(const file of editImageFiles){let reserved=editDrafts.get(file);if(!reserved){reserved=(await callable('reserveTicketFiles',{id:issue.id,indices:[editSlots.get(file)]})).files[0];editDrafts.set(file,reserved);}if(!editUploaded.has(file)){await uploadAttachment(reserved.path,file,attachmentType(file));editUploaded.add(file);}files.push({path:reserved.path,slotIndex:reserved.slotIndex,name:editNames.get(file)||file.name});}data.files=files;await callable('saveTicketEdit',data);}
  else{const live=state.issues.find(i=>i.id===issue.id);Object.assign(live,data);live.attachments=[...editRetained,...editImageFiles.map(f=>({name:editNames.get(f)||f.name,type:attachmentType(f),slotIndex:editSlots.get(f),size:f.size,previewUrl:previewFileUrl(f)}))];demoEvent(live,'edit','Administrator updated feedback and attachments (preview).');}
@@ -1331,7 +1296,7 @@ $("password-login-form").onsubmit = e => {
     const username = $("account-username").value.trim().toLowerCase();
     const password = $("account-password").value;
     try {
-      const result = await callable("passwordLogin", { username, password });
+      const result = await callable("passwordLogin", { username, password, remember: $("account-remember").checked });
       $("account-password").value = "";
       await managedLogin(result.sessionToken);
     } finally { $("account-password").value = ""; }
@@ -1456,6 +1421,8 @@ document
 $("dashboard-period").onchange = renderDashboard;
 for (const id of [
   "issue-search",
+  "issue-search-field",
+  "issue-type-filter",
   "issue-status",
   "issue-department",
   "issue-priority",
@@ -1466,7 +1433,8 @@ for (const id of [
   });
 $("clear-filters").onclick = () => {
   $("issue-search").value = "";
-  for (const id of ["issue-status", "issue-department", "issue-priority"])
+  $("issue-search-field").value = "all";
+  for (const id of ["issue-status", "issue-department", "issue-priority", "issue-type-filter"])
     $(id).value = "All";
   state.tablePage = 1;
   renderIssues();
@@ -1545,6 +1513,7 @@ async function handleAuth(user) {
   stopLive();
   state.user = null;
   state.isOwner = false;
+  state.isAdmin = false;
   state.ready = false;
   state.issues = [];
   state.myIssues = [];
@@ -1557,7 +1526,7 @@ async function handleAuth(user) {
   state.devices = [];
   state.timeline = [];
   state.selected = null;
-  state.files = [];
+  state.files = []; pendingFeedback=null;
   $("activation-result").hidden = true; $("activation-link").value = "";
   $("profile-form").reset(); $("password-form").reset();
   loadAppearancePreferences(null);
@@ -1588,6 +1557,7 @@ async function handleAuth(user) {
     state.user = session.user;
     await Promise.all([loadDashboardPreferences(state.user),loadAppearancePreferences(state.user)]);
     state.isOwner = session.isOwner;
+    state.isAdmin = session.isAdmin === true;
     state.requiresWindows = false;
     message("");
     updateIdentity();
@@ -1717,12 +1687,20 @@ const workspace = initWorkspace({state,toast,run,addEvidence(files) {
   state.files.push(...files); renderFiles(); return true;
 }});
 document.querySelector(".topbar .brand").onclick = event => { event.preventDefault(); navigate("dashboard"); };
+initIncidentColors(()=>({user:state.user,preview:state.preview}));
+initPendingTickets(()=>({user:state.user,preview:state.preview,page:state.page,departments:state.departments,types:workspace.types}));
+const incidentTimeline=initIncidentTimeline(scopedIssues,()=>state.ready,openIssue);
+setInterval(()=>{if(!state.preview&&!document.hidden&&incidentTimeline.visible())refreshRecords();},60000);
+initAnalysisGroups(()=>({user:state.user,preview:state.preview}));
 initUpgrade();
 initDriveStorage();
+initWifiSettings(()=>({isOwner:state.isOwner,preview:state.preview,page:state.page}));
 initContentTabs({state,navigate,toast});
 initMobileFeedback();
 initAppearancePreferences(()=>({user:state.user,preview:state.preview,isOwner:state.isOwner}));
-initDashboardPreferences(()=>({user:state.user,preview:state.preview}));
+initDashboardPreferences(()=>({user:state.user,preview:state.preview,isAdmin:state.isAdmin||state.isOwner}));
+compactDashboard();
+initSettingsTabs(()=>({isOwner:state.isOwner,isAdmin:state.isAdmin}));
 initializeLanguage(() => { workspace.render(); feedbackEditor.setLanguage(); editEditor.setLanguage(); renderAll(); renderTimeline(); updateIdentity(); if (state.selected) { const issue = state.issues.find(i => i.id === state.selected); if (issue) renderDetail(issue); } });
 selectOptions($("issue-status"), [
   { id: "All", name: "All statuses" },

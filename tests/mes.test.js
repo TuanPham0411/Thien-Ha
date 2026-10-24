@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   validateFiles,
+  validateEvidence,
   validateIssue,
   validateOccurrences,
   filterIssues,
@@ -186,4 +187,13 @@ test('video evidence has bounded file types and separate limits from images',()=
  assert.match(validateFiles([{name:'recording.mp4',type:'video/mp4',size:201*1024*1024}]),/200 MB/);
  assert.match(validateFiles([{name:'photo.jpg',type:'image/jpeg',size:11*1024*1024}]),/10 MB/);
  assert.match(validateFiles([{name:'script.mp4',type:'text/html',size:100}]),/unsupported/);
+});
+
+test('new tickets require image or video evidence; supplementary documents remain supported',()=>{
+ const document={name:'notes.pdf',type:'application/pdf',size:100};
+ assert.match(validateEvidence([]),/photo or video/);
+ assert.match(validateEvidence([document]),/photo or video/);
+ assert.equal(validateFiles([document]),'');
+ for(const type of ['image/png','video/mp4'])assert.equal(validateEvidence([{name:'evidence',type,size:100}]),'');
+ assert.match(validateEvidence([{name:'empty.png',type:'image/png',size:0}]),/empty/);
 });

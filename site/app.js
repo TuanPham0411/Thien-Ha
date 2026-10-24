@@ -1,3 +1,4 @@
+import './projects.css';
 import '@fontsource/dm-sans/400.css';
 import '@fontsource/dm-sans/500.css';
 import '@fontsource/dm-sans/600.css';
@@ -17,7 +18,36 @@ async function action(id,control,fn){if(control?.disabled)return;const wasDisabl
 function showAuth(section='workspace'){returnSection=section;setMode('login');$('auth-gate').hidden=false;$('main-site').hidden=true;window.scrollTo({top:0,behavior:'instant'});$('auth-email').focus({preventScroll:true});}
 function requireVerified(section='workspace'){if(!auth?.currentUser){showAuth(section);return false;}if(!auth.currentUser.emailVerified){toast('Verify your email before saving or sending a request.');return false;}return true;}
 function setMode(next){mode=next;$('auth-dialog').dataset.mode=next;const register=next==='register',reset=next==='reset';$('auth-form').reset();$('auth-title').textContent=register?'Create your account':reset?'Reset your password':'Sign in to TH';$('auth-description').textContent=reset?'Receive a reset link by email.':register?'A private account for projects and conversations.':'Your account, projects and conversations.';$('name-field').hidden=!register;$('auth-name').required=register;$('password-field').hidden=reset;$('auth-password').required=!reset;$('auth-password').minLength=register?10:1;$('auth-password').autocomplete=register?'new-password':'current-password';$('auth-password').placeholder=register?'At least 10 characters':'Enter your password';$('auth-password').type='password';$('password-toggle').textContent='Show';$('password-toggle').setAttribute('aria-label','Show password');$('signup-note').hidden=!register;$('google-login').hidden=reset;document.querySelector('.divider').hidden=reset;$('forgot-password').hidden=reset||register;$('auth-submit').textContent=reset?'Send reset link':register?'Create account':'Sign in';$('login-tab').setAttribute('aria-pressed',String(next==='login'));$('register-tab').setAttribute('aria-pressed',String(register));status('auth-status',auth?'':unavailable);$('auth-submit').disabled=!auth;$('google-login').disabled=!auth;}
-function renderProjects(){const text=$('project-search').value.trim().toLowerCase();const list=projects.filter(p=>(filter==='All'||p.category===filter)&&`${p.name} ${p.description} ${p.tags.join(' ')}`.toLowerCase().includes(text));$('project-list').replaceChildren();$('project-empty').hidden=!!list.length;for(const p of list){const card=element('article',undefined,'project-card');const art=element('div',undefined,`project-art ${p.category.toLowerCase()}`);art.setAttribute('aria-hidden','true');art.append(element('span',p.icon));const body=element('div',undefined,'project-body');const meta=element('div',undefined,'project-meta');meta.append(element('span',p.category.toUpperCase()),element('span',`${p.status} / ${p.year}`));body.append(meta,element('h3',p.name),element('p',p.subtitle));const tags=element('div',undefined,'tags');p.tags.forEach(t=>tags.append(element('span',t)));body.append(tags);const controls=element('div',undefined,'project-actions');const details=element('button','View project ↗','text-button');details.onclick=()=>showProject(p);const save=element('button',saved.has(p.id)?'✓ Saved':'+ Save','save-button');save.setAttribute('aria-pressed',String(saved.has(p.id)));save.setAttribute('aria-label',`${saved.has(p.id)?'Unsave':'Save'} ${p.name}`);save.onclick=()=>action('project-status',save,async()=>{if(!requireVerified('projects')){status('project-status',auth?.currentUser?'Verify your email to save projects.':'Sign in to save projects.');return;}const uid=auth.currentUser.uid;const ref=doc(db,'users',uid,'bookmarks',p.id);const existed=saved.has(p.id);if(existed)await deleteDoc(ref);else await setDoc(ref,{projectId:p.id,createdAt:serverTimestamp()});if(auth.currentUser?.uid!==uid)return;if(existed)saved.delete(p.id);else saved.add(p.id);renderProjects();renderSaved();status('project-status',existed?'Removed from your saved projects.':'Project saved to your workspace.');});controls.append(details,save);body.append(controls);card.append(art,body);$('project-list').append(card);}}
+function renderProjects(){
+ const text=$('project-search').value.trim().toLowerCase();
+ const list=projects.filter(p=>(filter==='All'||p.category===filter)&&`${p.name} ${p.subtitle} ${p.description} ${p.tags.join(' ')}`.toLowerCase().includes(text));
+ $('project-list').replaceChildren();$('project-empty').hidden=!!list.length;
+ $('project-count').textContent=`${list.length} of ${projects.length} projects`;
+ for(const p of list){
+  const card=element('article',undefined,'project-card');card.setAttribute('aria-labelledby',`project-title-${p.id}`);
+  const body=element('div',undefined,'project-body'),heading=element('div',undefined,'project-heading');
+  const art=element('div',undefined,`project-art ${p.category.toLowerCase()}`);art.setAttribute('aria-hidden','true');art.append(element('span',p.icon));
+  const intro=element('div',undefined,'project-intro'),meta=element('div',undefined,'project-meta');
+  meta.append(element('span',p.category.toUpperCase(),'project-category'),element('span',`${p.status} · ${p.year}`,`project-state${p.status==='Live'?' is-live':''}`));
+  const title=element('h3',p.name);title.id=`project-title-${p.id}`;intro.append(meta,title);heading.append(art,intro);
+  body.append(heading,element('p',p.subtitle,'project-subtitle'),element('p',p.description,'project-description'));
+  const tags=element('div',undefined,'tags');p.tags.forEach(t=>tags.append(element('span',t)));body.append(tags);
+  const controls=element('div',undefined,'project-actions'),visit=element('a','Open project ↗','project-launch');
+  visit.href=p.url;visit.target='_blank';visit.rel='noopener';visit.setAttribute('aria-label',`Open ${p.name} (opens in a new tab)`);
+  const details=element('button','Details','text-button');details.type='button';details.setAttribute('aria-label',`View details for ${p.name}`);details.onclick=()=>showProject(p);
+  const save=element('button',saved.has(p.id)?'✓ Saved':'+ Save','save-button');save.type='button';
+  save.setAttribute('aria-pressed',String(saved.has(p.id)));save.setAttribute('aria-label',`${saved.has(p.id)?'Unsave':'Save'} ${p.name}`);
+  save.onclick=()=>action('project-status',save,async()=>{
+   if(!requireVerified('projects')){status('project-status',auth?.currentUser?'Verify your email to save projects.':'Sign in to save projects.');return;}
+   const uid=auth.currentUser.uid,ref=doc(db,'users',uid,'bookmarks',p.id),existed=saved.has(p.id);
+   if(existed)await deleteDoc(ref);else await setDoc(ref,{projectId:p.id,createdAt:serverTimestamp()});
+   if(auth.currentUser?.uid!==uid)return;
+   if(existed)saved.delete(p.id);else saved.add(p.id);
+   renderProjects();renderSaved();status('project-status',existed?'Removed from your saved projects.':'Project saved to your workspace.');
+  });
+  controls.append(visit,details,save);body.append(controls);card.append(body);$('project-list').append(card);
+ }
+}
 function showProject(p){$('project-dialog-title').textContent=p.name;$('project-dialog-description').textContent=p.description;$('project-dialog-tags').replaceChildren(...p.tags.map(t=>element('span',t)));$('project-dialog-link').href=p.url;$('project-dialog-source').hidden=!p.source;if(p.source)$('project-dialog-source').href=p.source;$('project-dialog').showModal();}
 function renderSaved(){$('saved-projects').replaceChildren();const list=projects.filter(p=>saved.has(p.id));if(!list.length){$('saved-projects').append(element('p','Save a project to keep it here.','muted'));return;}for(const p of list){const row=element('div',undefined,'saved-item');const button=element('button',`${p.name} ↗`,'text-button');button.onclick=()=>showProject(p);row.append(button);$('saved-projects').append(row);}}
 async function loadWorkspace(user,version){if(!user.emailVerified)return;try{const [profile,bookmarks]=await Promise.all([getDoc(doc(db,'users',user.uid)),getDocs(collection(db,'users',user.uid,'bookmarks'))]);if(version!==epoch)return;if(profile.exists()&&validName(profile.data().displayName))$('profile-name').value=profile.data().displayName;saved=new Set(bookmarks.docs.map(d=>d.id));renderSaved();renderProjects();}catch(e){if(version===epoch)status('profile-status',friendlyError(e));}await loadInquiries(user,version);if(isAdmin(user))await loadAdmin(user,version);}

@@ -14,7 +14,8 @@ export function createRichEditor(textarea, { files, addImages, slotForFile, imag
   const toolbar = document.createElement('div'); toolbar.className = 'rich-toolbar'; toolbar.setAttribute('role','toolbar'); toolbar.setAttribute('aria-label','Text formatting');
   const body = document.createElement('div'); body.dataset.userContent='';
   shell.append(toolbar,body); textarea.before(shell);
-  const q = new Quill(body, {modules:{history:{userOnly:true}},formats:['bold','italic','underline','strike','font','size','header','list','align','indent','blockquote','color','background','image'],placeholder:t('Write feedback…')});
+  const q = new Quill(body, {modules:{history:{userOnly:true}},formats:['bold','italic','underline','strike','font','size','header','list','align','indent','blockquote','color','background','image'],placeholder:t(textarea.id==='description-input'?'MO / Serial / Process code / OP number / Product / Station: … Describe the issue and attach a photo or video.':'Write feedback…')});
+  if(textarea.getAttribute('aria-describedby'))q.root.setAttribute('aria-describedby',textarea.getAttribute('aria-describedby'));
   q.root.setAttribute('role','textbox'); q.root.setAttribute('aria-multiline','true'); q.root.setAttribute('aria-label',t('Feedback'));
   let range = {index:0,length:0}, serial = 0;
   const images = new Map(), ownUrls = new Set(), controls = [];

@@ -35,9 +35,16 @@ before(async()=>{
 });
 after(async()=>{await new Promise(resolve=>server.close(resolve));await runtimePool.end();await pool.end();await rm(files,{recursive:true,force:true});});
 async function api(name,data={},cookie='',host='mes.th.io.vn',extra={}) {
+ if(name==='createIssue'&&data.evidence===undefined)data={...data,evidence:[{name:'evidence.png',type:'image/png',size:100}]};
  const response=await fetch(base+(host==='th.io.vn'?'/api/portfolio':'/api/mes'),{method:'POST',headers:{'x-forwarded-host':host,'Content-Type':'application/json',cookie,...extra},body:JSON.stringify(host==='th.io.vn'?{action:name,data}:{name,data})});
  const text=await response.text();let body;try{body=JSON.parse(text);}catch{body=text;}
  return {status:response.status,body,cookie:response.headers.get('set-cookie')?.split(';')[0],headers:response.headers};
+}
+async function verifiedPhoto(issue,cookie,index=0){
+ const path=`issues/${issue.id}/${issue.uploadSlots[index]}`,extra={'x-forwarded-for':'192.0.2.85'};
+ const grant=await api('uploadUrl',{path},cookie,'mes.th.io.vn',extra);assert.equal(grant.status,200,JSON.stringify(grant.body));
+ const put=await fetch(base+grant.body.url,{method:'PUT',headers:{'x-forwarded-host':'mes.th.io.vn',...extra,'Content-Type':'image/png'},body:Buffer.from('verified-test-image')});assert.equal(put.status,200);
+ const attached=await api('attachFiles',{issueId:issue.id,files:[{slot:issue.uploadSlots[index],name:'evidence.png'}]},cookie,'mes.th.io.vn',extra);assert.equal(attached.status,200,JSON.stringify(attached.body));assert.equal(attached.body.published,true);
 }
 test('public clients cannot inject owner claims or traverse files',async()=>{
  assert.deepEqual(actorFor(null,'true'),{tester:true});
@@ -66,6 +73,7 @@ test('MES activation, CRUD, private files, tester restrictions, revocation',asyn
  const put=await fetch(base+grant.body.url,{method:'PUT',headers:{'x-forwarded-host':'mes.th.io.vn','Content-Type':'text/plain'},body:'attachment payload'});assert.equal(put.status,200,await put.text());
  assert.equal((await fetch(base+grant.body.url,{method:'PUT',headers:{'x-forwarded-host':'mes.th.io.vn','Content-Type':'text/plain'},body:'overwrite'})).status,403);
  const attached=await api('attachFiles',{issueId:issue.body.id,files:[{slot:issue.body.uploadSlots[0],name:'sample.txt',size:99999,type:'image/png'}]},user);assert.equal(attached.status,200,JSON.stringify(attached.body));
+ await verifiedPhoto(issue.body,user,1);
  const bundle=await api('read',{path:'issues'},user);const record=bundle.body.rows.find(r=>r.id===issue.body.id);assert.equal(record.attachments[0].size,18);assert.equal(record.attachments[0].type,'text/plain');
  const download=await api('downloadUrl',{path},user);assert.equal(download.status,200);assert.equal(await (await fetch(base+download.body.url,{headers:{'x-forwarded-host':'mes.th.io.vn'}})).text(),'attachment payload');
  assert.equal((await api('uploadUrl',{path:'issues/../../etc/passwd'},user)).status,400);
@@ -257,6 +265,7 @@ test('users comment across tickets; access history is administrator-only and red
  const leader=await api('manageDirectory',{type:'teamLeaders',operation:'create',name:'Comment leader'},owner);
  const issue=await api('createIssue',{reporterUid:a.body.uid,teamLeaderId:leader.body.id,subject:'Shared comments',process:'Station B',description:'Existing content must remain unchanged.',departmentId:dept.body.id},userA);
  assert.equal(issue.status,200,JSON.stringify(issue.body));
+ await verifiedPhoto(issue.body,userA,1);
  const before=(await api('readTicket',{id:issue.body.id},userA)).body;
  const comment=await api('addComment',{issueId:issue.body.id,text:'Bổ sung từ một user khác',author:'forged',authorUid:'mes-owner'},userB);
  assert.equal(comment.status,200,JSON.stringify(comment.body));
@@ -354,7 +363,7 @@ test('monthly ticket numbers, direct public API and the 99-ticket limit preserve
  const owner='th_mes='+(await pool.query("select mes_private.open_account_session('mes-owner') result")).rows[0].result.sessionToken;
  const department=(await pool.query("select id from mes_private.records where collection='departments' limit 1")).rows[0].id;
  const created=await Promise.all(Array.from({length:4},()=>api('createIssue',{reporterUid:'mes-owner',departmentId:department,process:'Numbered ticket',description:'Ticket number concurrency test'},owner)));
- for(const value of created)assert.equal(value.status,200,JSON.stringify(value.body));
+ for(const value of created){assert.equal(value.status,200,JSON.stringify(value.body));await verifiedPhoto(value.body,owner);}
  const codes=created.map(r=>r.body.ticketNumber);assert.equal(new Set(codes).size,4);for(const code of codes)assert.match(code,/^TH\d{4}-\d{2}$/);
  const item=created[0].body;const response=await fetch(base+'/api/mes/tickets/'+item.ticketNumber,{headers:{'x-forwarded-host':'mes.th.io.vn'}});assert.equal(response.status,200);const publicIssue=await response.json();assert.equal(publicIssue.id,item.id);assert.equal(publicIssue.ticketNumber,item.ticketNumber);assert.equal(publicIssue.uploadSlots,undefined);
  assert.equal((await fetch(base+'/api/mes/tickets/TH0000-99',{headers:{'x-forwarded-host':'mes.th.io.vn'}})).status,404);
@@ -439,11 +448,12 @@ test('content tabs publish bounded widgets and documents with owner/member/viewe
  const pdf=Buffer.from('%PDF-1.4\n% test document\n%%EOF');const reserved=await call('pages/media','POST',{name:'Training.pdf',type:'application/pdf',size:pdf.length});assert.equal(reserved.status,201);const id=reserved.body.id;
  const upload=await fetch(base+'/api/mes/uploads',{method:'POST',headers:{'x-forwarded-host':'mes.th.io.vn',cookie:owner,'Content-Type':'application/json'},body:JSON.stringify({kind:'media',path:id,type:'application/pdf',size:pdf.length})});assert.equal(upload.status,200);const uploadId=(await upload.json()).id;assert.equal((await fetch(base+'/api/mes/uploads/'+uploadId,{method:'PATCH',headers:{'x-forwarded-host':'mes.th.io.vn',cookie:owner,'Content-Type':'application/octet-stream','Upload-Offset':'0'},body:pdf})).status,200);
  assert.equal((await fetch(base+'/api/mes/media/'+id,{headers:{'x-forwarded-host':'mes.th.io.vn'}})).status,404,'Unpublished page documents stay private');
- const make=(type,extra={})=>({id:crypto.randomUUID(),type,title:type,body:'Safe text',width:'half',tone:'default',links:[],media:[],...extra});const widgets=[make('heading'),make('links',{links:[{label:'Documentation',url:'https://example.com/manual'}]}),make('documents',{media:[id]})];
+ const make=(type,extra={})=>({id:crypto.randomUUID(),type,title:type,body:'Safe text',width:'half',tone:'default',links:[],media:[],...extra});const widgets=[make('heading'),make('links',{links:[{label:'Documentation',url:'https://example.com/manual'},{label:'Intranet',url:'http://192.168.1.5:8080/'},{label:'Drive',url:'Z:\\MES'},{label:'Site',url:'/page/internal'}]}),make('documents',{media:[id]})];
  assert.equal((await call('pages/'+p.id,'PUT',{...p,active:true,widgets},user)).status,403);
  assert.equal((await call('pages/'+p.id,'PUT',{...p,widgets:[make('links',{links:[{label:'Bad',url:'javascript:alert(1)'}]})]})).status,400);
  assert.equal((await call('pages/'+p.id,'PUT',{...p,widgets:[make('image',{media:[id]})]})).status,400);
  let saved=await call('pages/'+p.id,'PUT',{...p,active:true,widgets});assert.equal(saved.status,200,JSON.stringify(saved.body));p=saved.body;
+ assert.deepEqual(p.widgets[1].links.map(l=>l.kind),['web','web','drive','web']);
  assert.equal((await call('pages/'+p.id,'GET',null,user)).status,200);assert.equal((await call('pages/'+p.id,'GET',null,'')).status,404);assert.equal((await call('pages','GET',null,'')).body.pages.some(x=>x.id===p.id),false);
  const memberDoc=await fetch(base+'/api/mes/media/'+id+'?inline=1',{headers:{'x-forwarded-host':'mes.th.io.vn',cookie:user}});assert.equal(memberDoc.status,200);assert.equal(memberDoc.headers.get('content-type'),'application/pdf');assert.equal(memberDoc.headers.get('content-disposition'),null);assert.deepEqual(Buffer.from(await memberDoc.arrayBuffer()),pdf);
  assert.equal((await call('pages/'+p.id,'PUT',{...p,revision:1})).status,409);
@@ -453,4 +463,133 @@ test('content tabs publish bounded widgets and documents with owner/member/viewe
  assert.equal((await call('pages/'+p.id,'DELETE',{revision:p.revision},user)).status,403);assert.equal((await call('pages/'+p.id,'DELETE',{revision:p.revision})).status,200);assert.equal((await call('pages/'+p.id,'GET',null,'')).status,404);assert.equal((await fetch(base+'/api/mes/media/'+id,{headers:{'x-forwarded-host':'mes.th.io.vn'}})).status,404);
  assert.deepEqual(await readFile(join(files,'media',id)),pdf);assert.equal((await pool.query('select count(*)::int n from public.mes_page_history where page_id=$1',[p.id])).rows[0].n,4);
  }finally{base=previousBase;await new Promise(r=>isolated.close(r));}
+});
+
+test('creation API requires photo/video evidence before allocating a ticket',async()=>{
+ const isolated=createApp(runtimePool,files).listen(0,'127.0.0.1');await new Promise(resolve=>isolated.once('listening',resolve));
+ const cookie='th_mes='+(await pool.query("select mes_private.open_account_session('mes-owner') result")).rows[0].result.sessionToken;
+ try{for(const evidence of [undefined,null,[],[null],[{name:'notes.pdf',type:'application/pdf',size:10}]]){
+ const response=await fetch(`http://127.0.0.1:${isolated.address().port}/api/mes`,{method:'POST',headers:{'x-forwarded-host':'mes.th.io.vn','Content-Type':'application/json',cookie},body:JSON.stringify({name:'createIssue',data:{evidence}})});
+ assert.equal(response.status,400);assert.equal((await response.json()).code,'invalid-evidence');
+ }}finally{await new Promise(resolve=>isolated.close(resolve));}
+});
+
+test('owner assigns admin/user; widget defaults inherit without overwriting personal layouts and Wi-Fi remains owner-only',async()=>{
+ const previousBase=base,isolated=createApp(runtimePool,files).listen(0,'127.0.0.1');await new Promise(r=>isolated.once('listening',r));base=`http://127.0.0.1:${isolated.address().port}`;
+ try{
+ const session=async uid=>'th_mes='+(await pool.query('select mes_private.open_account_session($1) result',[uid])).rows[0].result.sessionToken;
+ const owner=await session('mes-owner');assert.equal((await api('getSession',{},owner)).body.role,'owner');
+ const account=await api('manageUser',{operation:'create',username:'widgets.admin',displayName:'Widget administrator'},owner);assert.equal(account.status,200);
+ const uid=account.body.uid,user=(await api('activateAccount',{username:'widgets.admin',activationCode:account.body.activationCode,password:'test-widget-password'})).cookie;
+ assert.equal((await api('getSession',{},user)).body.isAdmin,false);
+ assert.equal((await api('saveDashboardDefaults',{hidden:['incidents']},user)).status,403);
+ assert.equal((await api('setAccountRole',{uid:'mes-owner',role:'user'},owner)).status,403);
+ assert.equal((await api('setAccountRole',{uid,role:'owner'},owner)).status,403);
+ assert.equal((await api('setAccountRole',{uid,role:'admin'},user)).status,403);
+ assert.equal((await api('setAccountRole',{uid,role:'admin'},owner)).status,200);
+ assert.equal((await api('getSession',{},user)).status,401,'Role changes revoke old sessions');
+ const admin=await session(uid);assert.equal((await api('getSession',{},admin)).body.isAdmin,true);assert.equal((await api('getSession',{},admin)).body.isOwner,false);
+ assert.equal((await api('setAccountRole',{uid,role:'user'},admin)).status,403);
+ assert.equal((await api('manageUser',{operation:'deactivate',uid:'mes-owner'},admin)).status,403);
+ const personalBefore=(await api('getDashboardPreferences',{},owner)).body;
+ assert.equal((await api('saveDashboardDefaults',{hidden:['incidents','video']},admin)).status,200);
+ assert.deepEqual((await api('getDashboardDefaults')).body.hidden,['incidents','video']);
+ assert.deepEqual((await api('getDashboardPreferences',{},admin)).body,{hidden:['incidents','video'],customized:false});
+ assert.deepEqual((await api('getDashboardPreferences',{},owner)).body,personalBefore,'Admin defaults must preserve existing personal layouts');
+ assert.equal((await api('saveDashboardPreferences',{hidden:['incidents'],uid:'mes-owner'},admin)).status,200);
+ assert.deepEqual((await api('getDashboardPreferences',{},owner)).body,personalBefore,'Cannot write another account preferences');
+ assert.equal((await api('saveDashboardDefaults',{hidden:['video']},admin)).status,200);
+ assert.deepEqual((await api('getDashboardPreferences',{},admin)).body.hidden,['incidents']);
+ assert.deepEqual((await api('resetDashboardPreferences',{},admin)).body,{hidden:['video'],customized:false});
+ assert.equal((await api('saveDashboardDefaults',{hidden:['not-a-widget']},admin)).status,403);
+ for(const cookie of ['',admin])for(const [path,method,body]of [['wifi','GET'],['wifi/connect','POST',{ssid:'test',password:'secret-password'}],['wifi/confirm','POST',{id:'bad'}]]){
+  const response=await fetch(base+'/api/mes/'+path,{method,headers:{'x-forwarded-host':'mes.th.io.vn',cookie,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});assert.notEqual(response.status,200);
+ }
+ const ownerWifi=await fetch(base+'/api/mes/wifi',{headers:{'x-forwarded-host':'mes.th.io.vn',cookie:owner}});assert.equal(ownerWifi.status,200);assert.equal((await ownerWifi.json()).available,false,'No Pi broker in test environment');
+ const blocked=await fetch(base+'/api/mes/wifi/connect',{method:'POST',headers:{'x-forwarded-host':'mes.th.io.vn',cookie:owner,origin:'https://evil.test','Content-Type':'application/json'},body:'{}'});assert.equal(blocked.status,403);
+ assert.equal((await api('setAccountRole',{uid,role:'user'},owner)).status,200);assert.equal((await api('getSession',{},admin)).status,401);assert.equal((await api('getSession',{},await session(uid))).body.isAdmin,false);
+ assert.equal((await api('saveDashboardDefaults',{hidden:[]},owner)).status,200);
+ }finally{base=previousBase;await new Promise(r=>isolated.close(r));}
+});
+test('dashboard includes compact state history in the existing bundle without private timeline content',async()=>{
+ const id='analysis-history-test',at=Date.now();
+ await pool.query("insert into mes_private.records(collection,id,data) values('issues',$1,$2)",[id,{subject:'History projection',status:'Closed',priority:'Low',createdAt:at,resolvedAt:at+2000}]);
+ const events=[{kind:'handling',text:'Status: Acknowledged → Awaiting information. Priority: Critical → High. PRIVATE NOTE',authorUid:'PRIVATE AUTHOR',createdAt:at+1000},{kind:'edit',before:{priority:'High',status:'Awaiting information',description:'PRIVATE BEFORE'},after:{priority:'Low',status:'Closed',assessment:'PRIVATE ASSESSMENT'},createdAt:at+2000},{kind:'comment',text:'PRIVATE COMMENT',createdAt:at+3000}];
+ for(const [index,event]of events.entries())await pool.query('insert into mes_private.records(collection,id,data) values($1,$2,$3)',[`issues/${id}/timeline`,String(index),event]);
+ const listing=await api('readBundle',{paths:[{path:'issues'}]});assert.equal(listing.status,200);
+ const item=listing.body.snapshots.issues.rows.find(i=>i.id===id);assert.equal(item.analysisHistory.length,2);
+ assert.deepEqual(item.analysisHistory[0],{at:at+1000,beforePriority:'Critical',priority:'High',beforeStatus:'Acknowledged',status:'Awaiting information'});
+ assert.equal(item.analysisHistory[1].status,'Closed');assert.ok(!JSON.stringify(item.analysisHistory).includes('PRIVATE'));
+ assert.ok(!('authorUid' in item));
+ await pool.query("delete from mes_private.records where (collection='issues' and id=$1) or collection=$2",[id,`issues/${id}/timeline`]);
+});
+test('incident colors persist per authenticated account and reject invalid colors',async()=>{
+ const pref=(name,data,cookie)=>api(name,data,cookie,'mes.th.io.vn',{'x-forwarded-for':'192.0.2.83'});
+ const owner='th_mes='+(await pool.query("select mes_private.open_account_session('mes-owner') result")).rows[0].result.sessionToken;
+ const uid=(await pool.query("select id from mes_private.records where collection='users' and data->>'username'='comment.b'")).rows[0].id;
+ const other='th_mes='+(await pool.query('select mes_private.open_account_session($1) result',[uid])).rows[0].result.sessionToken;
+ for(const name of ['getIncidentColors','saveIncidentColors'])assert.notEqual((await pref(name,{departments:{}})).status,200);
+ const value={line:'#a17c00',departments:{dept:'#428c91'}};
+ assert.equal((await pref('saveIncidentColors',{...value,uid:'mes-owner'},other)).status,200);
+ assert.deepEqual((await pref('getIncidentColors',{},owner)).body,{});
+ const fresh='th_mes='+(await pool.query('select mes_private.open_account_session($1) result',[uid])).rows[0].result.sessionToken;
+ assert.deepEqual((await pref('getIncidentColors',{},fresh)).body,value);
+ for(const data of [{line:'red',departments:{}},{line:null,departments:{}},{departments:[]},{departments:{dept:'url(evil)'}},{departments:{dept:123}}])assert.notEqual((await pref('saveIncidentColors',data,other)).status,200);
+ assert.deepEqual((await pref('getIncidentColors',{},other)).body,value);
+ assert.deepEqual((await pref('saveIncidentColors',{departments:{}},other)).body,{departments:{}});
+});
+test('remembered password login uses a private 30-day session and logout revokes it',async()=>{
+ const request=(name,data={},cookie='')=>api(name,data,cookie,'mes.th.io.vn',{'x-forwarded-for':'192.0.2.84'});
+ const login=data=>request('passwordLogin',{username:'hpham',password:'test-owner-password',...data});
+ const standard=await login({remember:false});assert.equal(standard.status,200,JSON.stringify(standard.body));assert.match(standard.headers.get('set-cookie'),/Max-Age=43200/);
+ const remembered=await login({remember:true});assert.equal(remembered.status,200,JSON.stringify(remembered.body));const cookie=remembered.headers.get('set-cookie');assert.match(cookie,/Max-Age=2592000/);for(const flag of ['HttpOnly','Secure','SameSite=Lax'])assert.ok(cookie.includes(flag));assert.equal(remembered.body.sessionToken,undefined);assert.equal(remembered.body.sessionMaxAgeSeconds,undefined);
+ async function remaining(session){const token=session.cookie.split('=')[1];return Number((await pool.query("select extract(epoch from expires_at-now()) seconds from mes_private.sessions where hash=$1",[hash(token)])).rows[0].seconds);}
+ assert.ok(await remaining(standard)<=43200);assert.ok(await remaining(remembered)>29*86400);
+ const forged=await login({remember:'true',sessionMaxAgeSeconds:2592000});assert.match(forged.headers.get('set-cookie'),/Max-Age=43200/);
+ assert.equal((await request('getSession',{},remembered.cookie)).status,200);
+ assert.equal((await request('logout',{},remembered.cookie)).status,200);
+ assert.notEqual((await request('getSession',{},remembered.cookie)).status,200);
+ assert.equal((await request('getSession',{},standard.cookie)).status,200);
+});
+test('metadata-only and document-only drafts stay hidden until a real image or video is attached',async()=>{
+ const owner='th_mes='+(await pool.query("select mes_private.open_account_session('mes-owner') result")).rows[0].result.sessionToken;
+ const department=(await pool.query("select id from mes_private.records where collection='departments' limit 1")).rows[0].id;
+ const request=(name,data={},cookie=owner)=>api(name,data,cookie,'mes.th.io.vn',{'x-forwarded-for':'192.0.2.86'});
+ const created=await request('createIssue',{reporterUid:'mes-owner',departmentId:department,process:'Upload interrupted',description:'Photo metadata alone cannot publish this ticket'});assert.equal(created.status,200,JSON.stringify(created.body));const draft=created.body;assert.equal(draft.pendingEvidence,true);
+ for(const cookie of ['',owner]){assert.ok(!(await request('read',{path:'issues'},cookie)).body.rows.some(i=>i.id===draft.id));assert.ok(!(await request('readBundle',{paths:[{path:'issues'}]},cookie)).body.snapshots.issues.rows.some(i=>i.id===draft.id));assert.notEqual((await request('readTicket',{id:draft.id},cookie)).status,200);}
+ const fake=await request('attachFiles',{issueId:draft.id,files:[{slot:draft.uploadSlots[0],name:'fake.png',type:'image/png',size:100}]});assert.equal(fake.status,400);
+ const path=`issues/${draft.id}/${draft.uploadSlots[0]}`,grant=await request('uploadUrl',{path});assert.equal(grant.status,200);
+ assert.equal((await fetch(base+grant.body.url,{method:'PUT',headers:{'x-forwarded-host':'mes.th.io.vn','x-forwarded-for':'192.0.2.86','content-type':'text/plain'},body:'only a document'})).status,200);
+ const doc=await request('attachFiles',{issueId:draft.id,files:[{slot:draft.uploadSlots[0],name:'pretend.png',type:'image/png'}]});assert.equal(doc.status,200);assert.equal(doc.body.published,false);
+ assert.ok(!(await request('read',{path:'issues'},'')).body.rows.some(i=>i.id===draft.id));
+ await verifiedPhoto(draft,owner,1);
+ for(const cookie of ['',owner]){const ticket=(await request('readTicket',{id:draft.id},cookie));assert.equal(ticket.status,200,JSON.stringify(ticket.body));assert.equal(ticket.body.pendingEvidence,false);assert.ok(ticket.body.attachments.some(f=>f.type==='image/png'));assert.ok((await request('read',{path:'issues'},cookie)).body.rows.some(i=>i.id===draft.id));}
+ const edit=await request('saveTicketEdit',{id:draft.id,files:[]});assert.notEqual(edit.status,200);assert.ok((await request('readTicket',{id:draft.id})).body.attachments.some(f=>f.type==='image/png'));
+});
+test('only the requester can complete private pending tickets and publish without changing handling history',async()=>{
+ const uid=(await pool.query("select id from mes_private.records where collection='users' and data->>'username'='comment.b'")).rows[0].id;
+ const owner='th_mes='+(await pool.query("select mes_private.open_account_session('mes-owner') result")).rows[0].result.sessionToken,user='th_mes='+(await pool.query('select mes_private.open_account_session($1) result',[uid])).rows[0].result.sessionToken;
+ const request=(name,data={},cookie=user)=>api(name,data,cookie,'mes.th.io.vn',{'x-forwarded-for':'192.0.2.87'});
+ const department=(await pool.query("select id from mes_private.records where collection='departments' limit 1")).rows[0].id;
+ const created=await request('createIssue',{reporterUid:uid,departmentId:department,process:'Pending station',description:'MO 1234 serial ABC issue requiring evidence'});assert.equal(created.status,200,JSON.stringify(created.body));const id=created.body.id;
+ const listing=await request('getMyPendingTickets');assert.equal(listing.status,200,JSON.stringify(listing.body));let pending=listing.body.rows.find(r=>r.id===id);assert.ok(pending);assert.equal(pending.submissionState,'Waiting for completion');assert.ok(pending.missingRequirements.includes('Photo or video'));assert.equal(pending.uploadSlots,undefined);
+ assert.notEqual((await request('getMyPendingTickets',{},'')).status,200);assert.ok(!(await request('getMyPendingTickets',{},owner)).body.rows.some(r=>r.id===id));assert.notEqual((await request('reservePendingFiles',{id,count:1},owner)).status,200);
+ await pool.query("update mes_private.records set data=data||jsonb_build_object('createdAt',(extract(epoch from now()-interval '4 days')*1000)::bigint,'status','Closed','priority','High') where collection='issues' and id=$1",[id]);
+ pending=(await request('getMyPendingTickets')).body.rows.find(r=>r.id===id);
+ const slot=await request('reservePendingFiles',{id,count:1});assert.equal(slot.status,200,JSON.stringify(slot.body));const path=slot.body.files[0].path;
+ const grant=await request('uploadUrl',{path});assert.equal(grant.status,200,JSON.stringify(grant.body));assert.equal((await fetch(base+grant.body.url,{method:'PUT',headers:{'x-forwarded-host':'mes.th.io.vn','x-forwarded-for':'192.0.2.87','content-type':'image/png'},body:'uploaded evidence'})).status,200);
+ const data={id,baseUpdatedAt:pending.updatedAt,process:'Updated OP 20',departmentId:department,description:'MO 1234 serial ABC updated evidence',richDocument:{version:1,ops:[{insert:'MO 1234 serial ABC updated evidence\n'}]},files:[{path,name:'evidence.png'}],status:'New',priority:'Critical',reporterUid:'mes-owner'};
+ assert.notEqual((await request('completePendingTicket',data,owner)).status,200);
+ assert.notEqual((await request('completePendingTicket',{...data,files:[]})).status,200);
+ assert.ok(!(await request('read',{path:'issues'},'')).body.rows.some(r=>r.id===id));
+ const saved=await request('completePendingTicket',data);assert.equal(saved.status,200,JSON.stringify(saved.body));assert.equal(saved.body.published,true);
+ assert.ok(!(await request('getMyPendingTickets')).body.rows.some(r=>r.id===id));const published=await request('readTicket',{id},'');assert.equal(published.status,200);assert.equal(published.body.status,'Closed');assert.equal(published.body.priority,'High');assert.equal(published.body.process,'Updated OP 20');assert.equal(published.body.createdAt,pending.createdAt);assert.ok((await pool.query("select 1 from mes_private.records where collection=$1 and data->>'kind'='supplemented'",[`issues/${id}/timeline`])).rowCount>0);
+ const legacyId='legacy-waiting-fixture',legacy={reporterUid:uid,departmentId:department,process:'',description:'MO legacy requiring completion',status:'New',priority:'Medium',createdAt:123,updatedAt:123,attachments:[]};
+ await pool.query("insert into mes_private.records(collection,id,data) values('issues',$1,$2)",[legacyId,legacy]);await pool.query('insert into mes_private.pending_ticket_legacy values($1)',[legacyId]);
+ assert.deepEqual((await pool.query("select data from mes_private.records where collection='issues' and id=$1",[legacyId])).rows[0].data,legacy,'Queueing preserves original ticket JSON exactly');
+ const oldPending=(await request('getMyPendingTickets')).body.rows.find(r=>r.id===legacyId);assert.ok(oldPending);assert.ok(oldPending.missingRequirements.includes('Process / Station'));assert.ok(!(await request('read',{path:'issues'},'')).body.rows.some(r=>r.id===legacyId));
+ const newSlot=await request('reservePendingFiles',{id:legacyId,count:1}),newPath=newSlot.body.files[0].path,newGrant=await request('uploadUrl',{path:newPath});assert.equal(newGrant.status,200,JSON.stringify(newGrant.body));
+ assert.equal((await fetch(base+newGrant.body.url,{method:'PUT',headers:{'x-forwarded-host':'mes.th.io.vn','x-forwarded-for':'192.0.2.87','content-type':'image/png'},body:'legacy evidence'})).status,200);
+ const oldSaved=await request('completePendingTicket',{...data,id:legacyId,baseUpdatedAt:123,files:[{path:newPath,name:'legacy.png'}]});assert.equal(oldSaved.status,200,JSON.stringify(oldSaved.body));assert.equal((await pool.query('select 1 from mes_private.pending_ticket_legacy where issue_id=$1',[legacyId])).rowCount,0);assert.equal((await request('readTicket',{id:legacyId},'')).status,200);
+
 });

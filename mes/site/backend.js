@@ -25,7 +25,7 @@ export async function api(name, data = {}) {
   });
   const body = await response.json();
   if (!response.ok) throw Object.assign(new Error(body.error || 'Request failed'), { code: body.code || 'unavailable' });
-  if (!['getAppearanceDefaults','getAppearancePreferences','read','readBundle','getDirectory','getSession','listDevices','downloadUrl','uploadUrl'].includes(name))
+  if (!['getMyPendingTickets','getIncidentColors','saveIncidentColors','getDashboardDefaults','getDashboardPreferences','getAppearanceDefaults','getAppearancePreferences','read','readBundle','getDirectory','getSession','listDevices','downloadUrl','uploadUrl'].includes(name))
     setTimeout(refreshRecords, 0);
   return body;
 }

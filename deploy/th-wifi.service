@@ -1,0 +1,19 @@
+[Unit]
+Description=TH Pi Wi-Fi broker with NetworkManager rollback
+After=NetworkManager.service
+[Service]
+ExecStart=/usr/bin/python3 /opt/th-app/current/deploy/wifi-agent.py
+RuntimeDirectory=th-wifi
+RuntimeDirectoryMode=0700
+# thapp can reach only the control socket; NetworkManager secrets remain root-only.
+ExecStartPost=/bin/chmod 0711 /run/th-wifi
+UMask=0077
+Restart=on-failure
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/run/th-wifi -/etc/NetworkManager/system-connections
+MemoryMax=48M
+TasksMax=16
+[Install]
+WantedBy=multi-user.target

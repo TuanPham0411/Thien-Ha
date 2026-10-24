@@ -1,0 +1,15 @@
+#dashboard-page>.workspace-hero{position:relative;isolation:isolate;display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:0;padding:18px 24px;margin:0 0 16px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(110deg,color-mix(in srgb,var(--card) 90%,#ff8646 10%),var(--card) 58%,color-mix(in srgb,var(--card) 94%,#addb79 6%));overflow:hidden}
+#dashboard-page>.workspace-hero:before{content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;background:repeating-linear-gradient(120deg,transparent 0 55px,color-mix(in srgb,var(--ink) 3%,transparent) 56px 57px);mask-image:linear-gradient(90deg,transparent,black)}
+#dashboard-page>.workspace-hero .eyebrow{margin:0 0 5px;font-size:.625rem;line-height:1.2;letter-spacing:.14em}
+#dashboard-page #dashboard-title{font-family:var(--ui-font,Calibri,Carlito,Arial,sans-serif);font-size:clamp(2rem,3.2vw,2.75rem);font-weight:700;line-height:1.05;letter-spacing:-.03em;margin:0}
+#dashboard-page>.workspace-hero .subtitle{font-size:.8125rem;line-height:1.35;margin:7px 0 0}
+#dashboard-page>.workspace-hero .heading-actions{display:flex;flex-direction:row;align-items:center;justify-content:flex-end;flex-wrap:nowrap;gap:12px;width:auto;min-width:0}
+#dashboard-page>.workspace-hero .date-range{display:flex;flex-direction:row;align-items:center;gap:8px;margin:0;font-size:.75rem;white-space:nowrap}
+#dashboard-page>.workspace-hero select,#dashboard-page #customize-dashboard{font-family:inherit;font-size:.8125rem;min-height:34px;height:34px;padding:7px 11px;border-radius:8px;margin:0}
+#dashboard-page>.workspace-hero select{width:150px}
+#dashboard-page #customize-dashboard{white-space:nowrap;background:color-mix(in srgb,var(--card) 88%,var(--ink) 12%)}
+@media(max-width:900px){#dashboard-page>.workspace-hero{align-items:flex-start;flex-direction:column;padding:16px 18px;gap:12px}#dashboard-page>.workspace-hero .heading-actions{justify-content:flex-start;width:100%}}
+@media(max-width:480px){#dashboard-page>.workspace-hero{padding:14px}#dashboard-page>.workspace-hero .date-range{font-size:0;gap:0}#dashboard-page>.workspace-hero select{width:140px}#dashboard-page>.workspace-hero .heading-actions{gap:8px}#dashboard-page #customize-dashboard{font-size:.75rem}}
+/* Main and the legacy page padding must not add two gaps above the hero. */
+main:has(>#dashboard-page:not([hidden])){padding-top:16px}
+#dashboard-page{padding-top:0}

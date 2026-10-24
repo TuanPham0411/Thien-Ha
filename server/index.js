@@ -1,3 +1,4 @@
+import {wifiRouter} from './wifi.js';
 import {resolve} from 'node:path';
 import {runtimeSites,hostOf} from './sites.js';
 import express from 'express';
@@ -32,6 +33,7 @@ export function createApp(pool,filesRoot,{sites=runtimeSites(),mesOnly=process.e
  app.use((req,res,next)=>['login','register','reset','consumeToken'].includes(req.body?.action)||['passwordLogin','activateAccount'].includes(req.body?.name)?authLimit(req,res,next):next());
  app.use('/api/mes',driveRouter(pool));app.use('/api/mes',pagesRouter(pool));
  app.use('/api/mes',previewRouter(pool,filesRoot));
+ app.use('/api/mes/wifi',wifiRouter(pool));
  app.use('/api/mes/admin',adminRouter(pool,filesRoot,gate));app.use('/api/mes',translationRouter(pool));
  if(!mesOnly)app.use('/api/portfolio',portfolioRouter(pool));app.use('/api/mes/uploads',uploadRouter(pool,filesRoot,gate));app.use('/api/mes',workspaceRouter(pool,filesRoot));app.use('/api/mes',mesRouter(pool,filesRoot));
  if(mesOnly&&webRoot){app.use(express.static(resolve(webRoot)));app.get(['/','/ticket/:reference','/page/:id'],(req,res)=>res.sendFile(resolve(webRoot,'index.html')));}

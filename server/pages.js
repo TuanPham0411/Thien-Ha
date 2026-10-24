@@ -1,3 +1,4 @@
+import {accessLink} from '../mes/site/access-links.js';
 import {Router} from 'express';
 import {randomUUID} from 'node:crypto';
 import {actorFor} from './security.js';
@@ -11,7 +12,7 @@ export function pageWidgets(input){
  return input.map(w=>{if(!w||!uuid(w.id)||seen.has(w.id)||!['heading','text','links','documents','image','video','callout','divider'].includes(w.type))throw fail(400,'Invalid widget.');seen.add(w.id);
   const links=w.links||[],media=w.media||[];
   if(!Array.isArray(links)||links.length>12||!Array.isArray(media)||media.length>10||media.some(id=>!uuid(id))||new Set(media).size!==media.length)throw fail(400,'Maximum 12 links or 10 files per widget.');
-  return {id:w.id,type:w.type,title:bounded(w.title||'',140,w.type==='heading'),body:bounded(w.body||'',8000),width:['full','half','third'].includes(w.width)?w.width:'full',tone:['default','info','success','warning'].includes(w.tone)?w.tone:'default',links:links.map(link=>{const url=bounded(link.url,2000,true);let parsed;try{parsed=new URL(url);}catch{throw fail(400,'Enter a full HTTP(S) link.');}if(!['https:','http:'].includes(parsed.protocol)||parsed.username||parsed.password||/[\r\n]/.test(url))throw fail(400,'Only HTTP(S) links without embedded credentials are supported.');return {label:bounded(link.label||url,140,true),url:parsed.href};}),media};
+  return {id:w.id,type:w.type,title:bounded(w.title||'',140,w.type==='heading'),body:bounded(w.body||'',8000),width:['full','half','third'].includes(w.width)?w.width:'full',tone:['default','info','success','warning'].includes(w.tone)?w.tone:'default',links:links.map(link=>{if(!link||typeof link!=='object')throw fail(400,'Invalid link.');const url=bounded(link.url,2000,true);let normalized;try{normalized=accessLink(url);}catch(error){throw fail(400,error.message);}return {label:bounded(link.label||url,140,true),...normalized};}),media};
  });
 }
 export function pagesRouter(pool){
